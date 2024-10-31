@@ -11,6 +11,7 @@ def create_app():
     configure_logging()
 
     # Import and register blueprints, if any
-    # app.register_blueprint(webhook_blueprint)
+    with app.app_context():
+        from . import routes
 
     return app
