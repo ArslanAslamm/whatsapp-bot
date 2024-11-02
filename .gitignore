@@ -78,3 +78,4 @@ instance/
 
 #.bak files
 *.bak
+*.dir
