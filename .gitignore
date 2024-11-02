@@ -75,3 +75,6 @@ instance/
 .webassets-cache
 
 # Scrapy 
+
+#.bak files
+*.bak

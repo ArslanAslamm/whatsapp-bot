@@ -4,6 +4,7 @@ import json
 import requests
 
 from app.services.openai_service import generate_response as run_assistant
+from app.services.image_processing import get_image_url, process_image_data as get_text
 import re
 
 
@@ -80,14 +81,33 @@ def process_whatsapp_message(body):
     name = body["entry"][0]["changes"][0]["value"]["contacts"][0]["profile"]["name"]
 
     message = body["entry"][0]["changes"][0]["value"]["messages"][0]
-    message_body = message["text"]["body"]
+    if message["type"] == "image":
+        print("Image received")
 
-    # TODO: implement custom function here
-    # response = generate_response(message_body)
+        image_id = message["image"]["id"]
+        image_url = get_image_url(image_id)
 
-    # OpenAI Integration
-    response = run_assistant(message_body, wa_id, name)
-    response = process_text_for_whatsapp(response)
+        if image_url:
+            extracted_text = get_text(image_url)
+
+            if extracted_text:
+                # Send back the extracted text as a response
+                response = f"Text extracted: \n {extracted_text}"
+            else:
+                response = "Failed to extract text from the image."
+        else:
+            response = "Failed to get the image URL."
+        
+        # response = f"Image received with ID {image_id} and URL {image_url}"
+
+    else:
+        message_body = message["text"]["body"]
+        # TODO: implement custom function here
+        # response = generate_response(message_body)
+
+        # OpenAI Integration
+        response = run_assistant(message_body, wa_id, name)
+        response = process_text_for_whatsapp(response)
 
     data = get_text_message_input(current_app.config["RECIPIENT_WAID"], response)
     send_message(data)
