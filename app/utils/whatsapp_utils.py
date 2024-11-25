@@ -2,9 +2,14 @@ import logging
 from flask import current_app, jsonify
 import json
 import requests
+import datetime as dt
+import time
+import pandas as pd
+from app.services.bigquery_service import dataframe_to_bigquery
 
 from app.services.openai_service import generate_response as run_assistant
-from app.services.image_processing import get_image_url, process_image_data as get_text
+from app.services.image_processing import get_image_url, process_image_data as get_text, process_ai_vision
+from app.services.image_process_modal import process_image_modal
 import re
 
 
@@ -25,6 +30,9 @@ def get_text_message_input(recipient, text):
         }
     )
 
+def clear_json_response(response):
+    clear_response = response.replace("```json", "").replace("```", "")
+    return json.loads(clear_response)
 
 def generate_response(response):
     # Return text in uppercase
@@ -54,7 +62,7 @@ def send_message(data):
         return jsonify({"status": "error", "message": "Failed to send message"}), 500
     else:
         # Process the response as normal
-        log_http_response(response)
+        # log_http_response(response)
         return response
 
 
@@ -88,26 +96,43 @@ def process_whatsapp_message(body):
         image_url = get_image_url(image_id)
 
         if image_url:
-            extracted_text = get_text(image_url)
-
-            if extracted_text:
-                # Send back the extracted text as a response
-                response = f"Text extracted: \n {extracted_text}"
+            # extracted_text = get_text(image_url)
+            processed_ai = process_image_modal(image_url)
+            if(processed_ai != "unknown"):
+                processed_vision_ai = process_ai_vision(image_url)
+                clear_response = clear_json_response(processed_vision_ai)
+                data = {
+                    "username": clear_response["username"],
+                    "amount": clear_response["amount"],
+                    "transaction_date": clear_response["date"],
+                    "transaction_time": clear_response["time"],
+                    "transaction_number": clear_response["operation_number"],
+                    "image_url": image_url,
+                    "image_id": image_id,
+                }
+                data['datetime'] = dt.datetime.fromtimestamp(time.time()).strftime('%Y-%m-%d %H:%M:%S')
+                df = pd.DataFrame(data, index=[0])
+                updated = dataframe_to_bigquery(df, 'alpaca_factory_history', 'payment-data')
+                if updated == 'found':
+                    response = "This payment slip has already been processed. Please try again with a different image."
+                else:
+                    response = "Payment data received successfully. You will be notified when the data is processed. Thank you!"
             else:
-                response = "Failed to extract text from the image."
+                response = "The image is a payment slip but not from the specified bank. Please try again."
         else:
-            response = "Failed to get the image URL."
+            response = "This platform only accepts payment slips. Please try again."
         
         # response = f"Image received with ID {image_id} and URL {image_url}"
 
     else:
-        message_body = message["text"]["body"]
+        # message_body = message["text"]["body"]
         # TODO: implement custom function here
         # response = generate_response(message_body)
 
         # OpenAI Integration
-        response = run_assistant(message_body, wa_id, name)
-        response = process_text_for_whatsapp(response)
+        # response = run_assistant(message_body, wa_id, name)
+        # response = process_text_for_whatsapp(response)
+        response = "This platform only accepts payment slips. Please try again."
 
     data = get_text_message_input(current_app.config["RECIPIENT_WAID"], response)
     send_message(data)
